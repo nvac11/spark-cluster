@@ -49,7 +49,12 @@ Copier tout le projet
 192.168.2.137
 Lancer uniquement le worker :
 ``` bash
-docker compose up -d worker
+docker build -t spark-worker -f Dockerfile.worker .
+docker run -d \
+  --name spark-worker-$(hostname) \
+  -e SPARK_MASTER_URL=spark://192.168.2.137:7077 \
+  spark-worker
+
 ```
 
 Le worker apparaît automatiquement dans l’interface http://<ip-master>:8080
