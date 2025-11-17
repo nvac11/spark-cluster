@@ -8,7 +8,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install pyspark + deps
-RUN pip3 install pyspark pandas numpy
+RUN pip3 install pyspark pandas numpy matplotlib
 
 # Copy entrypoint
 COPY entrypoint.sh /entrypoint.sh
