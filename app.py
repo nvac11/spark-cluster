@@ -16,16 +16,17 @@ from pyspark.ml.classification import DecisionTreeClassifier
 # SPARK CLUSTER CONFIG
 # ==========================================================
 
+
+
 spark = (
     SparkSession.builder
-    .appName("KDDCup-Scaling")
-    .master("spark://alfa:7077")              # cluster standalone
-    .config("spark.executor.memory", "8g")
-    .config("spark.executor.cores", 4)
-    .config("spark.driver.memory", "8g")
-    .config("spark.default.parallelism", "400")
-    .config("spark.sql.shuffle.partitions", "400")
-    .getOrCreate()
+        .appName("KDDCup-Scaling")
+        .config("spark.executor.memory", "8g")
+        .config("spark.executor.cores", 4)
+        .config("spark.driver.memory", "8g")
+        .config("spark.default.parallelism", "400")
+        .config("spark.sql.shuffle.partitions", "400")
+        .getOrCreate()
 )
 
 spark.sparkContext.setLogLevel("WARN")

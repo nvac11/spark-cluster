@@ -1,0 +1,23 @@
+FROM apache/spark:3.5.1
+
+USER root
+
+# Python + libs
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir pyspark numpy pandas matplotlib
+
+WORKDIR /app
+
+# Ton script
+COPY app.py /app/app.py
+
+# Entrypoint spécial master
+COPY entrypoint-master.sh /entrypoint-master.sh
+RUN chmod +x /entrypoint-master.sh
+
+EXPOSE 7077 8080
+
+ENTRYPOINT ["/entrypoint-master.sh"]

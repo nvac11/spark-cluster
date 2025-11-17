@@ -1,0 +1,16 @@
+FROM apache/spark:3.5.1
+
+USER root
+
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir pyspark numpy pandas matplotlib
+COPY kddcup.data /app/kddcup.data
+
+COPY entrypoint-worker.sh /entrypoint-worker.sh
+RUN chmod +x /entrypoint-worker.sh
+
+
+ENTRYPOINT ["/entrypoint-worker.sh"]

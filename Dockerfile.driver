@@ -1,0 +1,20 @@
+FROM apache/spark:3.5.1
+
+USER root
+
+# Python + pip (si pas déjà)
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Libs Python nécessaires pour app.py
+RUN pip3 install --no-cache-dir pyspark numpy pandas matplotlib
+
+WORKDIR /app
+
+# Copie ton script et le dataset dans l'image
+COPY app.py /app/app.py
+COPY kddcup.data /app/kddcup.data
+
+# Commande : lancer app.py en tant que driver avec spark-submit
+CMD ["/opt/spark/bin/spark-submit", "--master", "spark://192.168.2.137:7077", "/app/app.py"]
