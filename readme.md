@@ -7,6 +7,7 @@ Ce projet déploie un cluster Apache Spark en mode standalone entièrement conte
 Possibilité d’ajouter des workers sur d’autres machines du même réseau local
 
 Structure du projet
+```
 spark-cluster/
 ├── docker-compose.yml
 ├── Dockerfile.master
@@ -18,29 +19,31 @@ spark-cluster/
 ├── app.py                     # Script d’exemple (test de scaling)
 ├── kddcup.data                # Jeu de données KDD Cup 1999
 └── kdd_scaling.png            # Graphique généré (à récupérer)
+```
+
 Prérequis
 
 Docker
 Docker Compose (version récente)
 Toutes les machines sur le même réseau local (WiFi ou Ethernet)
 
-1. Lancer le cluster
+# 1. Lancer le cluster
 ``` bash
 docker compose up -d
 Vérifier que tout est démarré :
 docker compose ps
 ```
-2. Utiliser PySpark interactivement
+# 2. Utiliser PySpark interactivement
 docker exec -it spark-driver bash
 puis à l’intérieur du container :
 pyspark --master spark://spark-master:7077
-3. Exécuter le script app.py
+# 3. Exécuter le script app.py
 docker exec -it spark-driver python app.py
 Le script charge le dataset KDD Cup, effectue des transformations et génère un graphique de scaling.
-4. Récupérer le graphique
+# 4. Récupérer le graphique
 docker cp spark-driver:/app/kdd_scaling.png .
 Le fichier kdd_scaling.png apparaît dans votre dossier courant.
-5. Ajouter un Worker sur une autre machine
+# 5. Ajouter un Worker sur une autre machine
 Sur la machine distante :
 
 Installer Docker + Docker Compose
