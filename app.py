@@ -13,23 +13,38 @@ from pyspark.ml.classification import DecisionTreeClassifier
 
 
 # ==========================================================
-# SPARK CLUSTER CONFIG
+# SPARK CLUSTER CONFIG (adaptive)
 # ==========================================================
-
-
 
 spark = (
     SparkSession.builder
         .appName("KDDCup-Scaling")
-        .config("spark.executor.memory", "8g")
-        .config("spark.executor.cores", 4)
-        .config("spark.driver.memory", "8g")
-        .config("spark.default.parallelism", "400")
-        .config("spark.sql.shuffle.partitions", "400")
+        # Let spark-submit decide the master and executor settings.
+        # .config("spark.executor.memory", "8g")
+        # .config("spark.executor.cores", "4")
+        # .config("spark.driver.memory", "8g")
         .getOrCreate()
 )
 
-spark.sparkContext.setLogLevel("WARN")
+sc = spark.sparkContext
+sc.setLogLevel("WARN")
+
+# Auto-detect cluster parallelism
+cluster_cores = sc.defaultParallelism
+if cluster_cores <= 0:
+    cluster_cores = 4  # fallback
+
+# rule of thumb: ~2 tasks per core, min 32
+target_partitions = max(cluster_cores * 2, 32)
+
+print(f"Detected cluster cores (defaultParallelism): {cluster_cores}")
+print(f"Using {target_partitions} partitions for default & shuffle")
+
+spark.conf.set("spark.default.parallelism", target_partitions)
+spark.conf.set("spark.sql.shuffle.partitions", target_partitions)
+
+# Optionally help with mixed slow/fast machines:
+spark.conf.set("spark.speculation", "true")
 
 
 # ==========================================================
@@ -83,7 +98,7 @@ df.cache()
 full_count = df.count()
 print(f"Dataset KDD Cup complet chargé : {full_count:,} lignes")
 
-# on prend une base de 50k (accélère scaling mais reste réel)
+# base de 50k (plus rapide mais réaliste)
 BASE_SIZE = 50_000
 df_base = df.limit(BASE_SIZE).cache()
 
@@ -92,11 +107,11 @@ df_base = df.limit(BASE_SIZE).cache()
 # BUILD LIGHT PIPELINE (fast training)
 # ==========================================================
 
-indexers = [StringIndexer(inputCol=c, outputCol=c+"_idx", handleInvalid="keep")
+indexers = [StringIndexer(inputCol=c, outputCol=c + "_idx", handleInvalid="keep")
             for c in cat_cols + ["label"]]
 
 assembler = VectorAssembler(
-    inputCols=[c+"_idx" for c in cat_cols] + numeric_cols,
+    inputCols=[c + "_idx" for c in cat_cols] + numeric_cols,
     outputCol="features"
 )
 
@@ -129,7 +144,7 @@ for m in MULTIPLIERS:
 
     df_big = df_base.crossJoin(
         spark.range(m).select(lit(1).alias("x"))
-    ).drop("x").repartition(200)
+    ).drop("x").repartition(target_partitions)
 
     row_count = df_big.count()
     size_gb = BASE_DATASET_GB * m
