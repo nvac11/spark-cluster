@@ -17,8 +17,8 @@ EXECUTOR_CORES = "4"
 # Nous définissons ici les ressources par Executor.
 
 # 3. Mémoire : Allouez une quantité substantielle de mémoire par Executor.
-EXECUTOR_MEMORY = "8g" # 8 Go par Executor est une bonne base pour les tâches lourdes.
-DRIVER_MEMORY = "8g"   # Mémoire pour le Driver.
+EXECUTOR_MEMORY = "4g" # 8 Go par Executor est une bonne base pour les tâches lourdes.
+DRIVER_MEMORY = "4g"   # Mémoire pour le Driver.
 
 # 4. Parallélisme (Partitions de Shuffle) :
 # Le parallélisme doit être supérieur au nombre total de cœurs.
