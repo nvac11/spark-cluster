@@ -9,7 +9,7 @@ RUN apt-get update && \
 RUN pip3 install --no-cache-dir pyspark numpy pandas matplotlib
 
 WORKDIR /app
-COPY kddcup.data /app/kddcup.data
+COPY netflix_cleaned_20251011_141144.csv /app/netflix_cleaned_20251011_141144.csv
 
 COPY entrypoint-worker.sh /entrypoint-worker.sh
 RUN chmod +x /entrypoint-worker.sh

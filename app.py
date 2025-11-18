@@ -1,11 +1,9 @@
 import time
-import matplotlib.pyplot as plt
-import numpy as np
 import os
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, isnan, lit
-from pyspark.sql.types import DoubleType
+from pyspark.sql.functions import col, when, isnan
+from pyspark.sql.types import DoubleType, BooleanType
 
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import StringIndexer, VectorAssembler
@@ -21,7 +19,7 @@ def getenv_or(name, default=None):
 
 spark_master = getenv_or("SPARK_MASTER_URL")  # injecté par les scripts/containers
 
-builder = SparkSession.builder.appName("KDDCup-Scaling")
+builder = SparkSession.builder.appName("Scalability-Baseline-Netflix")
 
 # Si on connaît le master, on le fixe, sinon on laisse spark-submit décider
 if spark_master:
@@ -31,6 +29,7 @@ executor_mem   = getenv_or("SPARK_EXECUTOR_MEMORY")
 executor_cores = getenv_or("SPARK_EXECUTOR_CORES")
 driver_mem     = getenv_or("SPARK_DRIVER_MEMORY")
 log_level      = getenv_or("SPARK_LOG_LEVEL", "WARN")
+max_cores      = getenv_or("SPARK_CORES_MAX")
 
 # On n'impose des valeurs que si elles sont fournies
 if executor_mem:
@@ -39,6 +38,9 @@ if executor_cores:
     builder = builder.config("spark.executor.cores", executor_cores)
 if driver_mem:
     builder = builder.config("spark.driver.memory", driver_mem)
+if max_cores:
+    builder = builder.config("spark.cores.max", max_cores)
+
 
 spark = builder.getOrCreate()
 sc = spark.sparkContext
@@ -65,152 +67,107 @@ spark.conf.set("spark.default.parallelism", target_partitions)
 spark.conf.set("spark.sql.shuffle.partitions", target_partitions)
 
 # ==========================================================
-# KDD CUP COLUMN NAMES
+# 1. Charger et préparer le dataset Netflix
 # ==========================================================
 
-kdd_cols = [
-    "duration","protocol_type","service","flag","src_bytes","dst_bytes","land",
-    "wrong_fragment","urgent","hot","num_failed_logins","logged_in","num_compromised",
-    "root_shell","su_attempted","num_root","num_file_creations","num_shells",
-    "num_access_files","num_outbound_cmds","is_host_login","is_guest_login",
-    "count","srv_count","serror_rate","srv_serror_rate","rerror_rate","srv_rerror_rate",
-    "same_srv_rate","diff_srv_rate","srv_diff_host_rate","dst_host_count",
-    "dst_host_srv_count","dst_host_same_srv_rate","dst_host_diff_srv_rate",
-    "dst_host_same_src_port_rate","dst_host_srv_diff_host_rate","dst_host_serror_rate",
-    "dst_host_srv_serror_rate","dst_host_rerror_rate","dst_host_srv_rerror_rate",
-    "label"
-]
+csv_path = "netflix_cleaned_20251011_141144.csv"
 
-numeric_cols = [
-    "duration","src_bytes","dst_bytes","wrong_fragment","urgent","hot",
-    "num_failed_logins","logged_in","num_compromised","root_shell","su_attempted",
-    "num_root","num_file_creations","num_shells","num_access_files",
-    "num_outbound_cmds","is_host_login","is_guest_login","count","srv_count",
-    "serror_rate","srv_serror_rate","rerror_rate","srv_rerror_rate",
-    "same_srv_rate","diff_srv_rate","srv_diff_host_rate","dst_host_count",
-    "dst_host_srv_count","dst_host_same_srv_rate","dst_host_diff_srv_rate",
-    "dst_host_same_src_port_rate","dst_host_srv_diff_host_rate",
-    "dst_host_serror_rate","dst_host_srv_serror_rate","dst_host_rerror_rate",
-    "dst_host_srv_rerror_rate"
-]
-
-cat_cols = ["protocol_type", "service", "flag", "land"]
-
-
-# ==========================================================
-# LOAD KDD CUP AND PREPARE MINI BASE DATASET (scalable)
-# ==========================================================
-
-df = spark.read.csv("kddcup.data", header=False).toDF(*kdd_cols)
-
-# cast + impute
-for c in numeric_cols:
-    df = df.withColumn(c, col(c).cast(DoubleType()))
-    df = df.withColumn(c, when(col(c).isNull() | isnan(col(c)), 0.0).otherwise(col(c)))
-
-for c in cat_cols:
-    df = df.withColumn(c, when(col(c).isNull(), "unknown").otherwise(col(c)))
-
-df.cache()
-full_count = df.count()
-print(f"Dataset KDD Cup complet chargé : {full_count:,} lignes")
-
-# base de 50k (plus rapide mais réaliste)
-BASE_SIZE = 50_000
-df_base = df.limit(BASE_SIZE).cache()
-
-
-# ==========================================================
-# BUILD LIGHT PIPELINE (fast training)
-# ==========================================================
-
-indexers = [StringIndexer(inputCol=c, outputCol=c + "_idx", handleInvalid="keep")
-            for c in cat_cols + ["label"]]
-
-assembler = VectorAssembler(
-    inputCols=[c + "_idx" for c in cat_cols] + numeric_cols,
-    outputCol="features"
+df_base = (
+    spark.read.option("header", "true").csv(csv_path)
+    .select(
+        "subscription_plan", "watch_duration_minutes", "progress_percentage",
+        "age", "monthly_spend", "device_type", "action", "quality",
+        "user_rating", "genre_primary", "is_active"
+    )
 )
 
-classifier = DecisionTreeClassifier(
-    labelCol="label_idx",
+# Casts
+df_base = df_base \
+    .withColumn("watch_duration_minutes", col("watch_duration_minutes").cast(DoubleType())) \
+    .withColumn("progress_percentage",    col("progress_percentage").cast(DoubleType())) \
+    .withColumn("age",                    col("age").cast(DoubleType())) \
+    .withColumn("monthly_spend",          col("monthly_spend").cast(DoubleType())) \
+    .withColumn("is_active",              col("is_active").cast(BooleanType()))
+
+# Boolean → 0/1
+df_base = df_base.withColumn(
+    "is_active_num",
+    when(col("is_active") == True, 1.0).otherwise(0.0)
+).drop("is_active")
+
+# Imputation
+num_cols = ["watch_duration_minutes", "progress_percentage", "age", "monthly_spend", "is_active_num"]
+cat_cols = ["device_type", "action", "quality", "user_rating", "genre_primary"]
+
+for c in num_cols:
+    df_base = df_base.withColumn(
+        c,
+        when(col(c).isNull() | isnan(col(c)), 0.0).otherwise(col(c))
+    )
+
+for c in cat_cols:
+    df_base = df_base.withColumn(
+        c,
+        when(col(c).isNull(), "unknown").otherwise(col(c))
+    )
+
+df_base = df_base.cache()
+original_count = df_base.count()
+print(f"Dataset Netflix de base : {original_count:,} lignes")
+
+# ==========================================================
+# 2. Pipeline (DecisionTreeClassifier)
+# ==========================================================
+
+target = "subscription_plan"
+
+indexers = [
+    StringIndexer(inputCol=c, outputCol=c + "_idx", handleInvalid="keep")
+    for c in cat_cols
+]
+
+assembler = VectorAssembler(
+    inputCols=[c + "_idx" for c in cat_cols] + num_cols,
+    outputCol="features",
+    handleInvalid="keep"
+)
+
+label_indexer = StringIndexer(
+    inputCol=target,
+    outputCol="label",
+    handleInvalid="keep"
+)
+
+dt = DecisionTreeClassifier(
+    labelCol="label",
     featuresCol="features",
-    maxDepth=5,
-    maxBins=64,
     seed=42
 )
 
-pipeline = Pipeline(stages=indexers + [assembler, classifier])
-
-
-# ==========================================================
-# SCALING EXPERIMENT
-# ==========================================================
-
-MULTIPLIERS = [1, 2, 4, 8, 16, 32]
-BASE_DATASET_GB = 0.025  # estimation 50k ≈ 25MB
-
-sizes = []
-times = []
-
-print("\n=== SCALING EXPERIMENT ON REAL KDD CUP ===")
-print(f"{'Mult':<6} {'Rows':>10} {'GB':>8} {'Time(s)':>10} {'Rate (GB/s)':>12}")
-print("-" * 60)
-
-for m in MULTIPLIERS:
-
-    df_big = df_base.crossJoin(
-        spark.range(m).select(lit(1).alias("x"))
-    ).drop("x").repartition(target_partitions)
-
-    row_count = df_big.count()
-    size_gb = BASE_DATASET_GB * m
-
-    start = time.time()
-    pipeline.fit(df_big)
-    elapsed = time.time() - start
-
-    rate = size_gb / elapsed
-
-    print(f"x{m:<5} {row_count:>10,} {size_gb:>8.3f} {elapsed:>10.2f} {rate:>12.3f}")
-
-    sizes.append(size_gb)
-    times.append(elapsed)
-
+pipeline = Pipeline(stages=indexers + [assembler, label_indexer, dt])
 
 # ==========================================================
-# SAVE SCALABILITY PLOT
+# 3. Multiplier le dataset par 128
 # ==========================================================
 
-sizes = np.array(sizes)
-times = np.array(times)
+df_big = df_base
+for i in range(5):  # 2^7 = 128
+    df_big = df_big.unionByName(df_big)
 
-scale_factor = sizes / sizes[0]
-exec_factor = times / times[0]
+df_big = df_big.repartition(target_partitions).cache()
+big_count = df_big.count()
+factor = big_count / original_count if original_count > 0 else float("nan")
+print(f"Dataset étendu : {big_count:,} lignes (facteur ≈ {factor:.1f}x)")
 
-plt.figure(figsize=(10, 6))
+# ==========================================================
+# 4. Entraînement + mesure du temps (DecisionTree)
+# ==========================================================
 
-plt.plot(
-    sizes, scale_factor, color="red", marker="^",
-    linewidth=2.5, markersize=10, label="Dataset size (scale factor)"
-)
+print("\n=== Entraînement DecisionTree sur dataset x128 ===")
+start_time = time.time()
+model = pipeline.fit(df_big)
+end_time = time.time()
 
-plt.plot(
-    sizes, exec_factor, color="blue", marker="o",
-    linewidth=3, markersize=9, label="Execution time (normalized)"
-)
+train_duration = end_time - start_time
+print(f"Temps d'entraînement DecisionTree sur dataset x128 : {train_duration:.2f} secondes\n")
 
-plt.xlabel("Dataset size (GB)", fontsize=14)
-plt.ylabel("Scale factor", fontsize=14)
-plt.title("Pipeline scalability on KDD Cup (distributed)", fontsize=16)
-plt.grid(True, linestyle="--", alpha=0.7)
-plt.legend()
-
-OUTPUT_FILE = "kdd_scaling.png"
-plt.tight_layout()
-plt.savefig(OUTPUT_FILE, dpi=240)
-plt.close()
-
-print(f"\nGraphique sauvegardé → {os.path.abspath(OUTPUT_FILE)}\n")
-
-spark.stop()
