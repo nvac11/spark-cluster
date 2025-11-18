@@ -11,41 +11,58 @@ from pyspark.ml import Pipeline
 from pyspark.ml.feature import StringIndexer, VectorAssembler
 from pyspark.ml.classification import DecisionTreeClassifier
 
-
 # ==========================================================
-# SPARK CLUSTER CONFIG (adaptive)
+# SPARK CLUSTER CONFIG (adaptive & auto)
 # ==========================================================
 
-spark = (
-    SparkSession.builder
-        .appName("KDDCup-Scaling")
-        # Let spark-submit decide the master and executor settings.
-        # .config("spark.executor.memory", "8g")
-        # .config("spark.executor.cores", "4")
-        # .config("spark.driver.memory", "8g")
-        .getOrCreate()
-)
+def getenv_or(name, default=None):
+    v = os.getenv(name)
+    return v if v not in (None, "") else default
 
+spark_master = getenv_or("SPARK_MASTER_URL")  # injecté par les scripts/containers
+
+builder = SparkSession.builder.appName("KDDCup-Scaling")
+
+# Si on connaît le master, on le fixe, sinon on laisse spark-submit décider
+if spark_master:
+    builder = builder.master(spark_master)
+
+executor_mem   = getenv_or("SPARK_EXECUTOR_MEMORY")
+executor_cores = getenv_or("SPARK_EXECUTOR_CORES")
+driver_mem     = getenv_or("SPARK_DRIVER_MEMORY")
+log_level      = getenv_or("SPARK_LOG_LEVEL", "WARN")
+
+# On n'impose des valeurs que si elles sont fournies
+if executor_mem:
+    builder = builder.config("spark.executor.memory", executor_mem)
+if executor_cores:
+    builder = builder.config("spark.executor.cores", executor_cores)
+if driver_mem:
+    builder = builder.config("spark.driver.memory", driver_mem)
+
+spark = builder.getOrCreate()
 sc = spark.sparkContext
-sc.setLogLevel("WARN")
+sc.setLogLevel(log_level)
 
-# Auto-detect cluster parallelism
-cluster_cores = sc.defaultParallelism
-if cluster_cores <= 0:
-    cluster_cores = 4  # fallback
+# Auto-détection des ressources du cluster
+try:
+    cluster_cores = sc.defaultParallelism
+    if not cluster_cores or cluster_cores <= 0:
+        raise ValueError
+except Exception:
+    cluster_cores = int(getenv_or("SPARK_FALLBACK_CORES", "4"))
 
-# rule of thumb: ~2 tasks per core, min 32
-target_partitions = max(cluster_cores * 2, 32)
+tasks_per_core = int(getenv_or("SPARK_TASKS_PER_CORE", "2"))
+min_partitions = getenv_or("SPARK_MIN_PARTITIONS")
 
-print(f"Detected cluster cores (defaultParallelism): {cluster_cores}")
-print(f"Using {target_partitions} partitions for default & shuffle")
+if min_partitions:
+    min_partitions = int(min_partitions)
+    target_partitions = max(cluster_cores * tasks_per_core, min_partitions)
+else:
+    target_partitions = cluster_cores * tasks_per_core
 
 spark.conf.set("spark.default.parallelism", target_partitions)
 spark.conf.set("spark.sql.shuffle.partitions", target_partitions)
-
-# Optionally help with mixed slow/fast machines:
-spark.conf.set("spark.speculation", "true")
-
 
 # ==========================================================
 # KDD CUP COLUMN NAMES

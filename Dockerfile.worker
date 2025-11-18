@@ -7,10 +7,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir pyspark numpy pandas matplotlib
+
+WORKDIR /app
 COPY kddcup.data /app/kddcup.data
 
 COPY entrypoint-worker.sh /entrypoint-worker.sh
 RUN chmod +x /entrypoint-worker.sh
-
 
 ENTRYPOINT ["/entrypoint-worker.sh"]

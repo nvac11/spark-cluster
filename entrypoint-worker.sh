@@ -8,8 +8,9 @@ fi
 
 echo "==== Spark WORKER node ===="
 echo "Connecting to master: $SPARK_MASTER_URL"
+echo "Cores   : ${SPARK_WORKER_CORES:-not set}"
+echo "Memory  : ${SPARK_WORKER_MEMORY:-not set}"
 echo "==========================="
 
-# Tu peux ajouter ici des options mémoire / CPU
-/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker \
+exec /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker \
   "$SPARK_MASTER_URL"

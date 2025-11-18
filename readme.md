@@ -30,7 +30,11 @@ Toutes les machines sur le même réseau local (WiFi ou Ethernet)
 # 1. Lancer le cluster
 ``` bash
 docker compose up -d
+```
+
 Vérifier que tout est démarré :
+
+``` bash
 docker compose ps
 ```
 # 2. Utiliser PySpark interactivement
@@ -81,16 +85,4 @@ Nettoyage complet :
 ``` bash
 docker compose down --volumes --remove-orphans
 docker system prune -a --volumes
-```
-
-7. Ajuster les ressources Spark
-Dans app.py, modifier par exemple :
-``` python
-conf.set("spark.executor.memory", "2g")
-conf.set("spark.executor.cores", "2")
-Allocation dynamique (fortement recommandé avec plusieurs workers) :
-conf.set("spark.dynamicAllocation.enabled", "true")
-conf.set("spark.dynamicAllocation.minExecutors", "1")
-conf.set("spark.dynamicAllocation.maxExecutors", "20")
-conf.set("spark.shuffle.service.enabled", "true")
 ```
