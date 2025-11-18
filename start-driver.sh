@@ -14,7 +14,7 @@ docker rm -f $NAME 2>/dev/null || true
 
 echo "[DRIVER] Lancement du job Spark sur spark://$MASTER_IP:7077..."
 
-docker run --rm \
+docker run \
   --name $NAME \
   --network host \
   -e SPARK_MASTER_URL="spark://$MASTER_IP:7077" \
