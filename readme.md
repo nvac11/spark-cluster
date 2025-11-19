@@ -3,7 +3,7 @@
 Ce projet déploie un **cluster Apache Spark** en mode *standalone*, entièrement conteneurisé avec **Docker**.  
 Il permet d’exécuter des applications PySpark en distribuant la charge sur plusieurs machines du même réseau local.
 
-## 📌 Architecture du cluster
+## Architecture du cluster
 
 - **1 Spark Master**
 - **1 ou plusieurs Spark Workers**
@@ -14,7 +14,7 @@ Le script principal charge le dataset **KDD Cup**, effectue des transformations 
 
 ---
 
-## 🛠️ Prérequis
+## Prérequis
 
 - **Docker** installé sur toutes les machines
 - Toutes les machines connectées au **même réseau local**
@@ -22,7 +22,7 @@ Le script principal charge le dataset **KDD Cup**, effectue des transformations 
 
 ---
 
-## 🚀 Construction et lancement du cluster
+## Construction et lancement du cluster
 
 ### 1. Builder les images Docker
 
