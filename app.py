@@ -8,9 +8,10 @@ from pyspark.sql.types import DoubleType, BooleanType
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import StringIndexer, VectorAssembler
 from pyspark.ml.classification import DecisionTreeClassifier
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 
 # ==========================================================
-# SPARK CLUSTER CONFIG (adaptive & auto)
+# SPARK CLUSTER CONFIG 
 # ==========================================================
 
 def getenv_or(name, default=None):
@@ -147,11 +148,11 @@ dt = DecisionTreeClassifier(
 pipeline = Pipeline(stages=indexers + [assembler, label_indexer, dt])
 
 # ==========================================================
-# 3. Multiplier le dataset par 128
+# 3. Multiplier le dataset par 32
 # ==========================================================
 
 df_big = df_base
-for i in range(5):  # 2^7 = 128
+for i in range(5):  # 2^5 = 32
     df_big = df_big.unionByName(df_big)
 
 df_big = df_big.repartition(target_partitions).cache()
@@ -163,11 +164,26 @@ print(f"Dataset étendu : {big_count:,} lignes (facteur ≈ {factor:.1f}x)")
 # 4. Entraînement + mesure du temps (DecisionTree)
 # ==========================================================
 
-print("\n=== Entraînement DecisionTree sur dataset x128 ===")
+print("\n=== Entraînement DecisionTree sur dataset 32 ===")
 start_time = time.time()
 model = pipeline.fit(df_big)
 end_time = time.time()
 
 train_duration = end_time - start_time
-print(f"Temps d'entraînement DecisionTree sur dataset x128 : {train_duration:.2f} secondes\n")
+print(f"Temps d'entraînement DecisionTree sur dataset 32 : {train_duration:.2f} secondes\n")
 
+# ==========================================================
+# 5. Évaluation (Accuracy)
+# ==========================================================
+
+# On applique le modèle sur les données d'entraînement (ou df_base) pour évaluer
+predictions = model.transform(df_big)
+
+evaluator = MulticlassClassificationEvaluator(
+    labelCol="label", 
+    predictionCol="prediction", 
+    metricName="accuracy"
+)
+
+accuracy = evaluator.evaluate(predictions)
+print(f"Accuracy du modèle : {accuracy:.4f}")
